@@ -180,15 +180,15 @@ func combineChunks(fileDir string, ngfd NgFlowData) (string, error) {
 	}
 	for _, f := range files {
 		fl := path.Join(fileDir, f.Name())
-		dat, err := ioutil.ReadFile(fl)
-		if err != nil {
-			return "", err
-		}
-		_, err = cn.Write(dat)
-		if err != nil {
-			return "", err
-		}
-		if fl != combinedName { // we don't want to delete the file we just created
+		if fl != combinedName { // we don't want to read or delete the file we just created
+			dat, err := ioutil.ReadFile(fl)
+			if err != nil {
+				return "", err
+			}
+			_, err = cn.Write(dat)
+			if err != nil {
+				return "", err
+			}
 			err = os.Remove(fl)
 			if err != nil {
 				return "", err

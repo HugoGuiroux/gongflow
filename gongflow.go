@@ -165,8 +165,6 @@ func ChunksCleanup(tempDir string, timeoutDur time.Duration) error {
 			return err
 		}
 
-		log.Println(f.Name())
-		log.Println(time.Now().Sub(finfo.ModTime()))
 		if time.Now().Sub(finfo.ModTime()) > timeoutDur {
 			err = os.RemoveAll(fl)
 			if err != nil {

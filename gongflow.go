@@ -4,15 +4,15 @@ package gongflow
 
 import (
 	"errors"
-	"http"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
 	"path"
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/valyala/fasthttp"
 )
 
 var (
@@ -71,34 +71,34 @@ func (a byFileName) Less(i, j int) bool {
 
 // ChunkFlowData does exactly what it says on the tin, it extracts all the flow data from a request object and puts
 // it into a nice little struct for you
-func ChunkFlowData(r *http.Request) (NgFlowData, error) {
+func ChunkFlowData(r *fasthttp.RequestCtx) (NgFlowData, error) {
 	var err error
 	ngfd := NgFlowData{}
-	ngfd.ChunkNumber, err = strconv.Atoi(r.FormValue("flowChunkNumber"))
+	ngfd.ChunkNumber, err = strconv.Atoi(string(r.FormValue("flowChunkNumber")))
 	if err != nil {
 		return ngfd, errors.New("Bad ChunkNumber")
 	}
-	ngfd.TotalChunks, err = strconv.Atoi(r.FormValue("flowTotalChunks"))
+	ngfd.TotalChunks, err = strconv.Atoi(string(r.FormValue("flowTotalChunks")))
 	if err != nil {
 		return ngfd, errors.New("Bad TotalChunks")
 	}
-	ngfd.ChunkSize, err = strconv.Atoi(r.FormValue("flowChunkSize"))
+	ngfd.ChunkSize, err = strconv.Atoi(string(r.FormValue("flowChunkSize")))
 	if err != nil {
 		return ngfd, errors.New("Bad ChunkSize")
 	}
-	ngfd.TotalSize, err = strconv.Atoi(r.FormValue("flowTotalSize"))
+	ngfd.TotalSize, err = strconv.Atoi(string(r.FormValue("flowTotalSize")))
 	if err != nil {
 		return ngfd, errors.New("Bad TotalSize")
 	}
-	ngfd.Identifier = r.FormValue("flowIdentifier")
+	ngfd.Identifier = string(r.FormValue("flowIdentifier"))
 	if ngfd.Identifier == "" {
 		return ngfd, errors.New("Bad Identifier")
 	}
-	ngfd.Filename = r.FormValue("flowFilename")
+	ngfd.Filename = string(r.FormValue("flowFilename"))
 	if ngfd.Filename == "" {
 		return ngfd, errors.New("Bad Filename")
 	}
-	ngfd.RelativePath = r.FormValue("flowRelativePath")
+	ngfd.RelativePath = string(r.FormValue("flowRelativePath"))
 	if ngfd.RelativePath == "" {
 		return ngfd, errors.New("Bad RelativePath")
 	}
@@ -108,7 +108,7 @@ func ChunkFlowData(r *http.Request) (NgFlowData, error) {
 // ChunkUpload is used to handle a POST from ng-flow, it will return an empty string for chunk upload (incomplete) and when
 // all the chunks have been uploaded, it will return the path to the reconstituted file.  So, you can just keep calling it
 // until you get back the path to a file.
-func ChunkUpload(tempDir string, ngfd NgFlowData, r *http.Request) (string, error) {
+func ChunkUpload(tempDir string, ngfd NgFlowData, r *fasthttp.RequestCtx) (string, error) {
 	err := checkDirectory(tempDir)
 	if err != nil {
 		return "", err
@@ -133,22 +133,22 @@ func ChunkUpload(tempDir string, ngfd NgFlowData, r *http.Request) (string, erro
 func ChunkStatus(tempDir string, ngfd NgFlowData) (string, int) {
 	err := checkDirectory(tempDir)
 	if err != nil {
-		return "Directory is broken: " + err.Error(), http.StatusInternalServerError
+		return "Directory is broken: " + err.Error(), fasthttp.StatusInternalServerError
 	}
 	_, chunkFile := buildPathChunks(tempDir, ngfd)
 	ChunkNumberString := strconv.Itoa(ngfd.ChunkNumber)
 	dat, err := ioutil.ReadFile(chunkFile)
 	if err != nil {
 		// every thing except for 200, 201, 202, 404, 415. 500, 501
-		return "The chunk " + ngfd.Identifier + ":" + ChunkNumberString + " isn't started yet!", http.StatusNotAcceptable
+		return "The chunk " + ngfd.Identifier + ":" + ChunkNumberString + " isn't started yet!", fasthttp.StatusNotAcceptable
 	}
 	// An exception for large last chunks, according to ng-flow the last chunk can be anywhere less
 	// than 2x the chunk size unless you haave forceChunkSize on... seems like idiocy to me, but alright.
 	if ngfd.ChunkNumber != ngfd.TotalChunks && ngfd.ChunkSize != len(dat) {
-		return "The chunk " + ngfd.Identifier + ":" + ChunkNumberString + " is the wrong size!", http.StatusInternalServerError
+		return "The chunk " + ngfd.Identifier + ":" + ChunkNumberString + " is the wrong size!", fasthttp.StatusInternalServerError
 	}
 
-	return "The chunk " + ngfd.Identifier + ":" + ChunkNumberString + " looks great!", http.StatusOK
+	return "The chunk " + ngfd.Identifier + ":" + ChunkNumberString + " looks great!", fasthttp.StatusOK
 }
 
 // ChunksCleanup is used to go through the tempDir and remove any chunks and directories older than
@@ -249,20 +249,16 @@ func allChunksUploaded(tempDir string, ngfd NgFlowData) bool {
 }
 
 // storeChunk puts the chunk in the request into the right place on disk
-func storeChunk(tempDir string, tempFile string, ngfd NgFlowData, r *http.Request) error {
+func storeChunk(tempDir string, tempFile string, ngfd NgFlowData, r *fasthttp.RequestCtx) error {
 	err := os.MkdirAll(tempDir, DefaultDirPermissions)
 	if err != nil {
 		return errors.New("Bad directory")
 	}
-	file, _, err := r.FormFile("file")
+	metadata, err := r.FormFile("file")
 	if err != nil {
 		return errors.New("Can't access file field")
 	}
-	data, err := ioutil.ReadAll(file)
-	if err != nil {
-		return errors.New("Can't read file")
-	}
-	err = ioutil.WriteFile(tempFile, data, DefaultDirPermissions)
+	err = fasthttp.SaveMultipartFile(metadata, tempFile)
 	if err != nil {
 		return errors.New("Can't write file")
 	}

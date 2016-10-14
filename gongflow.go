@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -50,6 +51,22 @@ type NgFlowData struct {
 	Filename string
 	// RelativePath is the file's relative path when selecting a directory (defaults to file name in all browsers except Chrome)
 	RelativePath string
+}
+
+// this is used to sort files correctly in combineChunks()
+// otherwise, 10, 11, 12 come right after 1 and so on...
+type byFileName []os.FileInfo
+
+func (a byFileName) Len() int      { return len(a) }
+func (a byFileName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a byFileName) Less(i, j int) bool {
+	if iName, err := strconv.Atoi(a[i].Name()); err != nil {
+		return false // move filenames that are not ints to the end
+	} else if jName, err := strconv.Atoi(a[j].Name()); err != nil {
+		return true // ditto
+	} else {
+		return iName < jName
+	}
 }
 
 // ChunkFlowData does exactly what it says on the tin, it extracts all the flow data from a request object and puts
@@ -180,6 +197,9 @@ func combineChunks(fileDir string, ngfd NgFlowData) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	sort.Sort(byFileName(files))
+
 	for _, f := range files {
 		fl := path.Join(fileDir, f.Name())
 		// make sure, we not copy the same file in the final file.
@@ -266,9 +286,9 @@ func checkDirectory(d string) error {
 	testName := "5d58061677944334bb616ba19cec5cc4"
 	testChunk := "42"
 	contentName := "foobie"
-	testContent := `For instance, on the planet Earth, man had always assumed that he was more intelligent than 
-	dolphins because he had achieved so much—the wheel, New York, wars and so on—whilst all the dolphins had 
-	ever done was muck about in the water having a good time. But conversely, the dolphins had always believed 
+	testContent := `For instance, on the planet Earth, man had always assumed that he was more intelligent than
+	dolphins because he had achieved so much—the wheel, New York, wars and so on—whilst all the dolphins had
+	ever done was muck about in the water having a good time. But conversely, the dolphins had always believed
 	that they were far more intelligent than man—for precisely the same reasons.`
 
 	p := path.Join(d, testName, testChunk)
